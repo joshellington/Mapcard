@@ -1,111 +1,106 @@
-/* Author: 
+// 
 
-*/
+var t,
+    map,
+    my_lat = geoip_latitude(),
+    my_lng = geoip_longitude(),
+    my_id = guid(),
+    markers = {},
+    current = [],
+    me = {id: my_id, lat: my_lat, lng: my_lng};
 
-var map;
+log('My ID: '+my_id);
 
 $(function() {
+  $('#mapbox').height(window.innerHeight);
 
-	if (navigator.geolocation) {
-		navigator.geolocation.getCurrentPosition(success, error);
-		subscribe();
-	} else {
-		error('not supported');
-	}
-
+  init('mapbox', 'http://a.tiles.mapbox.com/v3/joshellington.map-906jvud1.jsonp');
 });
 
-function subscribe() {
-	// listen for messages
-	PUBNUB.subscribe({
-	    channel  : "<%= @key %>",
-	    callback : function(message) {
-	    	// log(message);
-		    addmarker(message.lat, message.lng);
-		}
-	});
+// Map stuff
+
+function init(cont, url) {
+  map = new L.Map('mapbox').setView(new L.LatLng(my_lat, my_lng), 15);
+
+  wax.tilejson(url, function(tilejson) {
+      map.addLayer(new wax.leaf.connector(tilejson));
+  });
 }
 
-function publish(position) {
-	// send message
-	PUBNUB.publish({
-	    channel : "<%= @key %>",
-	    message : {'lat': position.coords.latitude, 'lng': position.coords.longitude}
-	});
+// Pubnubber
+
+PUBNUB.subscribe({
+  channel: id,
+  restore: false,
+  callback: function(msg) {
+    log('message received');
+    log(msg);
+    log('////////');
+
+    log('current ids');
+    log(current);
+    log('////////');
+    
+    if ( msg.status == 'connected' && current.indexOf(msg.id) == -1 ) {
+      add(msg);
+    } else if ( msg.status == 'disconnected' ) {
+      remove(msg);
+    }
+  },
+  connect: function() {
+    me.status = 'connected';
+    publish(me);
+    
+    t = setInterval(function() {
+      me.status = 'connected';
+      publish(me);  
+    }, 500);
+  },
+  disconnect: function() {
+    clearInterval(t);
+
+    me.status = 'disconnected';
+    publish(me);
+  }
+});
+
+function publish(obj) {
+  PUBNUB.publish({
+    channel: id,
+    message: obj
+  });
 }
 
-function success(position) {
-	
-	// log(position);
-	setmap('map', position);
-
+function remove(obj) {
+  // Remove marker
+  log('Removed marker!!');
+  log(markers.obj.id);
+  map.removeLayer(markers.obj.id);
+  var idx = current.indexOf(obj.id);
+  current.splice(idx, 1);
 }
 
-function error(msg) {
-	log(msg);
-}
+function add(obj) {
+  log('Marker added!!');
 
-function addmarker(lat, lng) {
+  // Add marker
+  var loc = new L.LatLng(obj.lat, obj.lng);
 
-	var LeafIcon = L.Icon.extend({
-		iconUrl: '/img/marker.png',
-		shadowUrl: '/img/marker-shadow.png',
-	});
+  var Icon = L.Icon.extend({
+    iconUrl: '/img/icons/marker-solid-24.png',
+    shadowUrl: null,
+    iconSize: new L.Point(24, 24),
+    shadowSize: null,
+    iconAnchor: new L.Point(12, 24),
+    popupAnchor: new L.Point(0,-24)
+  });
 
-	var blueIcon = new LeafIcon();
+  var marker = new L.Marker(loc, {
+    icon: new Icon()
+  });
 
-	var markerLocation = new L.LatLng(lat, lng),
-		marker = new L.Marker(markerLocation, {icon: blueIcon});
-	
-	map.addLayer(marker);
-	marker.bindPopup("Friend").openPopup();
-}
+  markers.my_id = marker;
+  current.push(obj.id);
 
-function setmap(id, position) {
-
-	log(position.coords);
-
-	publish(position);
-
-	// Set full width/height
-	$('#'+id).width(document.width).height(document.height);
-
-	// initialize the map on the "map" div with a given center and zoom 
-	map = new L.Map(id, {
-	    center: new L.LatLng(position.coords.latitude, position.coords.longitude),
-	    zoom: 5
-	});
-
-	// create a CloudMade tile layer
-	var cloudmadeUrl = 'http://{s}.tile.cloudmade.com/401429e8338a4533aae6e555748c7d74/997/256/{z}/{x}/{y}.png',
-	    cloudmade = new L.TileLayer(cloudmadeUrl, {maxZoom: 16});
-
-	var LeafIcon = L.Icon.extend({
-		iconUrl: '/img/marker.png',
-		shadowUrl: '/img/marker-shadow.png',
-	});
-
-	var blueIcon = new LeafIcon();
-
-	var markerLocation = new L.LatLng(position.coords.latitude, position.coords.longitude),
-		marker = new L.Marker(markerLocation, {icon: blueIcon});
-
-	map.addLayer(marker);
-	marker.bindPopup("You are here!").openPopup();
-
-	// add the CloudMade layer to the map
-	map.addLayer(cloudmade);
-
-	// map.on('click', onMapClick);
-		
-	var popup = new L.Popup();
-			
-	function onMapClick(e) {
-		var latlngStr = '(' + e.latlng.lat.toFixed(3) + ', ' + e.latlng.lng.toFixed(3) + ')';
-		
-		popup.setLatLng(e.latlng);
-		popup.setContent("You clicked the map at " + latlngStr);
-		map.openPopup(popup);
-	}
-
+  map.addLayer(marker);
 }
